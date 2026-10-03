@@ -120,20 +120,27 @@ Telegram-слой уже развёрнут: миграция `supabase/migratio
 Supabase Auth не умеет вход через Telegram «из коробки». Telegram перешёл на OIDC и
 подписал ключи кривой `secp256k1`, которую библиотека `go-jose` в gotrue не поддерживает
 ([supabase/auth#2534](https://github.com/supabase/auth/issues/2534), фикс
-[#2548](https://github.com/supabase/auth/pull/2548) не задеплоен). Поэтому вход
-проверяется собственным маршрутом `POST /api/auth/telegram`: подпись Telegram
-(HMAC-SHA256 от токена бота) проверяется на сервере, затем выдаётся сессия Supabase.
+[#2548](https://github.com/supabase/auth/pull/2548) не задеплоен). Поэтому обмен
+кода на токены делает наш сервер, а подпись `id_token` проверяется по JWKS Telegram:
+в `lib/telegram/verify.ts` берётся только RSA-ключ по `kid`, остальные игнорируются.
+
+> **Login Widget (iframe) больше не работает.** Telegram пометил его как
+> deprecated — вместо него нужен редирект на `oauth.telegram.org/auth`
+> (Authorization Code + PKCE). Именно так и сделано:
+> `GET /api/auth/telegram/start` → Telegram → `GET /auth/telegram/callback`.
 
 ### Переменные окружения
 
 | Переменная | Где | Пример |
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | только сервер (Secret) | `123456:AA...` |
+| `TELEGRAM_LOGIN_CLIENT_SECRET` | только сервер (Secret), из BotFather | `a1b2c3...` |
 | `TELEGRAM_DISPATCH_SECRET` | только сервер (Secret), совпадает с Vault | случайная строка |
 | `NEXT_PUBLIC_TELEGRAM_BOT_ID` | клиент (Config) | `8822412364` |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | клиент (Config) | `svn_nskbot` |
+| `NEXT_PUBLIC_SITE_URL` | клиент (Config), без слеша | `https://bookroom-dmitriy9.vercel.app` |
 
-Токен бота **никогда** не попадает в браузер.
+Токен бота и client secret **никогда** не попадают в браузер.
 
 ### Vault (для pg_cron-страховки)
 
@@ -149,12 +156,20 @@ select vault.create_secret('https://<host>/api/internal/telegram/dispatch',
 
 Задание уже создано: `cron.job` → `bookroom-telegram-dispatch` (`*/5 * * * *`).
 
-### Mini App в @BotFather
+### Настройка в @BotFather
 
 1. `/newbot` — создать бота.
-2. **Login Widget** — включить scopes `Email` и `Phone`, алгоритм `RS256`,
-   добавить домен приложения.
-3. **Menu Button** — указать `https://<host>/tg` (обязательно HTTPS).
+2. **Login Widget → настройки** — домен приложения
+   (`https://bookroom-dmitriy9.vercel.app`) и алгоритм `RS256`.
+3. **Login Widget → Redirect URIs** — добавить точно такую строку:
+   ```
+   https://bookroom-dmitriy9.vercel.app/auth/telegram/callback
+   ```
+   Без слеша в конце. Этот адрес должен совпасть с `NEXT_PUBLIC_SITE_URL` +
+   `/auth/telegram/callback`, иначе Telegram вернёт `redirect_uri` mismatch.
+4. Скопировать **Client Secret** из этого же раздела → добавить в Vercel как
+   Secret `TELEGRAM_LOGIN_CLIENT_SECRET`.
+5. **Menu Button** — указать `https://<host>/tg` (обязательно HTTPS).
 
 ### Как включить пуши
 

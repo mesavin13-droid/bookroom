@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loginWithTelegram } from "@/lib/telegram/login";
+import { linkTelegramIdentity } from "@/lib/telegram/link-identity";
 import { telegramChatId, verifyTelegramInitData } from "@/lib/telegram/verify";
 
 export const dynamic = "force-dynamic";
@@ -29,9 +29,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Данные Telegram не прошли проверку." }, { status: 401 });
   }
 
-  const result = await loginWithTelegram(initData);
+  const result = await linkTelegramIdentity(tg);
   if (!result.ok) {
-    return NextResponse.json({ ok: false, error: result.error, code: result.code }, { status: 401 });
+    return NextResponse.json({ ok: false, error: result.error, code: result.reason }, { status: 401 });
   }
 
   // Personal chat only: a group/supergroup chat must not silently claim the

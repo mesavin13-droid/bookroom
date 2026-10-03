@@ -29,18 +29,41 @@ function authMessage(message: string | undefined) {
   return "Не получилось войти. Попробуйте ещё раз.";
 }
 
-export function LoginForm({ defaultNext, telegramClientId }: { defaultNext?: string; telegramClientId?: string } = {}) {
+/** Explains why a Telegram sign-in bounced back, without leaking internals. */
+function telegramErrorReason(error: string | null, reason: string | null) {
+  if (error !== "telegram") return error ? "Ссылка устарела. Запросите новый код." : null;
+  switch (reason) {
+    case "denied":
+      return "Вход отменён в Telegram.";
+    case "state_mismatch":
+    case "bad_state":
+      return "Не удалось проверить вход. Попробуйте ещё раз.";
+    case "expired":
+      return "Время входа истекло. Попробуйте ещё раз.";
+    case "telegram_in_use":
+      return "Этот Telegram уже привязан к другому аккаунту.";
+    case "invalid_token":
+      return "Данные Telegram не прошли проверку. Попробуйте ещё раз.";
+    case "token_exchange_failed":
+      return "Telegram не подтвердил вход. Проверьте настройки бота и попробуйте снова.";
+    case "session_failed":
+      return "Не удалось создать сессию. Попробуйте ещё раз.";
+    default:
+      return "Вход через Telegram не удался. Попробуйте ещё раз.";
+  }
+}
+
+export function LoginForm({ defaultNext, telegramBotId }: { defaultNext?: string; telegramBotId?: string } = {}) {
   const router = useRouter();
   const sp = useSearchParams();
   const next = safeNext(sp.get("next") ?? defaultNext ?? null);
-  const clientId = telegramClientId;
   const [mode, setMode] = React.useState<Mode>(sp.get("phone") ? "phone" : "email");
   const [stage, setStage] = React.useState<Stage>("identify");
   const [email, setEmail] = React.useState(sp.get("email") ?? "");
   const [phone, setPhone] = React.useState(sp.get("phone") ? maskPhone(sp.get("phone")!) : "");
   const [code, setCode] = React.useState("");
   const [password, setPassword] = React.useState("");
-  const [error, setError] = React.useState<string | null>(sp.get("error") ? "Ссылка устарела. Запросите новый код." : null);
+  const [error, setError] = React.useState<string | null>(telegramErrorReason(sp.get("error"), sp.get("reason")));
   const [pending, setPending] = React.useState(false);
   const supabase = createClient();
 
@@ -129,9 +152,9 @@ export function LoginForm({ defaultNext, telegramClientId }: { defaultNext?: str
 
       {stage === "identify" && (
         <>
-          {clientId && (
+          {telegramBotId && (
             <>
-              <TelegramLoginButton clientId={clientId} />
+              <TelegramLoginButton botId={telegramBotId} next={next} />
               <div className="flex items-center gap-3 text-xs text-subtle">
                 <span className="h-px flex-1 bg-border" />
                 или
