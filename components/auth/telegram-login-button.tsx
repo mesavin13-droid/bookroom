@@ -7,19 +7,45 @@ import { createClient } from "@/lib/supabase/client";
 import { claimMyClients } from "@/actions/auth";
 import { safeNext } from "@/lib/safe-redirect";
 
+/**
+ * Options accepted by Telegram.Login.init.
+ *
+ * Taken from the widget SDK itself, which whitelists these attributes:
+ *   ['size','userpic','init_auth','request_access','radius','min_width','max_width','lang']
+ * Anything outside this list is silently ignored by Telegram, so the type is
+ * closed on purpose: inventing an option name here would look valid and do
+ * nothing at runtime.
+ */
+interface TelegramLoginInitOptions {
+  /** Bot id (Client ID from @BotFather). */
+  bot_id: string;
+  /** Lets the bot write to the user later. Required for push notifications. */
+  request_access?: boolean;
+  /** Silent sign-in without showing the popup. */
+  init_auth?: boolean;
+  /** Show the user's avatar in the button. */
+  userpic?: boolean;
+  size?: "small" | "medium" | "large";
+  radius?: number;
+  min_width?: number;
+  max_width?: number;
+  lang?: string;
+  callback: TelegramLoginCallback;
+}
+
+type TelegramLoginCallback = (err: string | null, user?: unknown) => void;
+
 declare global {
   interface Window {
     Telegram?: {
       Login: {
-        init: (opts: unknown, cb: TelegramLoginCallback) => void;
+        init: (opts: TelegramLoginInitOptions, cb: TelegramLoginCallback) => void;
         /** cb is optional: the callback registered in init() receives the result. */
         open: (cb?: TelegramLoginCallback) => void;
       };
     };
   }
 }
-
-type TelegramLoginCallback = (err: string | null, user?: unknown) => void;
 
 /**
  * Telegram sign-in via the official Login Widget.
@@ -35,7 +61,9 @@ export function TelegramLoginButton({ clientId, next }: { clientId?: string; nex
   const [error, setError] = React.useState<string | null>(null);
   const target = safeNext(next ?? sp.get("next") ?? null);
 
+  // The widget cannot initialise without a bot id, so bail out before the effect.
   React.useEffect(() => {
+    if (!clientId) return;
     const w = window as Window;
     if (!w.Telegram?.Login) return;
     // Telegram fires the callback twice (init + open); keep only the first.
@@ -93,7 +121,9 @@ export function TelegramLoginButton({ clientId, next }: { clientId?: string; nex
     w.Telegram.Login.init(
       {
         bot_id: clientId,
-        request_write_access: true,
+        // Lets the bot message the user afterwards, which is what the studio
+        // push notifications depend on.
+        request_access: true,
         callback: handle,
       },
       handle,
