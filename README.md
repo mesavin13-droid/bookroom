@@ -22,6 +22,8 @@ npm run dev
 
 ## Облачный Supabase
 
+Пошаговая инструкция (создание проекта, ключи, `db push`, Auth, переменные для Vercel) — в **[DEPLOY.md](DEPLOY.md)**.
+
 ```bash
 npx supabase link --project-ref <ref>
 npx supabase db push           # миграции
