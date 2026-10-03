@@ -14,5 +14,5 @@
 *.pdf binary
 *.ics text eol=lf
 
-# Lockfiles: keep exactly as the package manager writes them
-package-lock.json -diff
+# Lockfile: generated artifact, keep LF, hide from diffs but stay text
+package-lock.json text eol=lf linguist-generated=true -diff
