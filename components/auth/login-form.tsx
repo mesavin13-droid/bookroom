@@ -71,7 +71,10 @@ export function LoginForm({ defaultNext }: { defaultNext?: string } = {}) {
   async function verify(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!/^\d{6}$/.test(code)) return setError("Введите 6 цифр из сообщения.");
+    // Supabase issues 6-digit SMS codes but 8-character email tokens by default
+    // (mailer_otp_length). Accept both so a misconfigured OTP length cannot lock
+    // a real user out of their own account.
+    if (!/^\d{6,8}$/.test(code)) return setError("Введите код из сообщения.");
     setPending(true);
     const { error } =
       mode === "email"
@@ -172,9 +175,9 @@ export function LoginForm({ defaultNext }: { defaultNext?: string } = {}) {
               inputMode="numeric"
               autoComplete="one-time-code"
               autoFocus
-              maxLength={6}
+              maxLength={8}
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
               className="text-center text-2xl tracking-[0.5em] tabular"
               placeholder="000000"
             />

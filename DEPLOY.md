@@ -6,16 +6,28 @@
 ## Текущее состояние
 
 Облачный проект `klcqalehqhhmjfvlpakl` («booktoom») развёрнут, все 7 миграций применены.
-Проверено: 21 таблица, RLS включён на всех 20 таблицах `public`, exclusion constraint
-`appointments_no_overlap`, 31 триггер, 41 функция, бакеты `avatars` / `gallery` / `studio-assets`.
+Проверено: 20 таблиц, RLS включён на всех таблицах `public`, exclusion constraint
+`appointments_no_overlap`, 30 триггеров, 41 функция, бакеты `avatars` / `gallery` / `studio-assets`.
+Все 20 таблиц и RPC-функции проверены живым запросом к REST API.
 
 > ⚠️ **Ключи.** На этом проекте новый формат `sb_secret_...` возвращает **401**.
 > Рабочий ключ — legacy JWT `service_role` (`eyJ...`). Это проверено запросом к REST API.
-> Если проект переведён на новые ключи, замените `SUPABASE_SERVICE_ROLE_KEY` в Vercel.
 
 > ⚠️ **Пароль БД не совпадает с ключами API.** `supabase db push` требует именно пароль БД
 > из Settings → Database. С персональным токеном (Management API) миграции применяются
 > через `POST /v1/projects/<ref>/database/query`.
+
+### Что ещё не подключено (блокирует вход)
+
+| Что | Статус | Что нужно |
+| --- | --- | --- |
+| **SMS для телефона** | `phone_enabled` выкл, `sms_twilio_*` пусто → `phone_provider_disabled` | Аккаунт Twilio (или MessageBird/Vonage/Textlocal) + ключи в Settings → Authentication → SMS |
+| **SMTP для почты** | Не настроен, используется встроенный отправщик Supabase | Сервис Resend / SendGrid / Mailgun в Settings → Authentication → Email |
+| **Лимит писем** | `rate_limit_email_sent = 2` в час — этого хватает на 2 попытки | Поднять после подключения SMTP |
+| **Site URL / Redirect URLs** | `site_url = http://localhost:3000` | Указать `https://<домен>` и `https://<домен>/auth/callback` в Settings → Authentication → URL Configuration |
+
+Пока SMS и SMTP не подключены, вход невозможен ни по телефону, ни по почте.
+Форма входа обрабатывает это корректно и предлагает сменить способ, а не падает.
 
 ## Вариант A. Облачный Supabase (для Vercel)
 
