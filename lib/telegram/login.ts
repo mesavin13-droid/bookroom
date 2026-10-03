@@ -1,6 +1,6 @@
 import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { telegramSyntheticEmail, verifyTelegramInitData } from "@/lib/telegram/verify";
+import { telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData } from "@/lib/telegram/verify";
 import { humanizeError } from "@/lib/booking/errors";
 
 export type TelegramLoginResult =
@@ -8,18 +8,27 @@ export type TelegramLoginResult =
   | { ok: false; error: string; code?: string };
 
 /**
- * Exchanges verified Telegram identity for a Supabase session.
+ * Exchanges a verified Telegram identity for a Supabase session.
  *
- * Supabase Auth cannot consume Telegram's OIDC directly (its JWKS uses
- * secp256k1, which gotrue does not support), so we mint the session here:
+ * Supabase Auth cannot consume Telegram's OIDC directly (its JWKS contains a
+ * secp256k1 key that gotrue's verifier rejects), so the session is minted here:
  * find or create the auth user, link the Telegram id, then hand the browser a
  * one-time token hash it can exchange client-side.
+ *
+ * Accepts either shape the Login Widget produces: a bot-token-signed blob
+ * (initData) or an OIDC id_token.
  */
-export async function loginWithTelegram(initData: string): Promise<TelegramLoginResult> {
+export async function loginWithTelegram(initData: string, idToken = ""): Promise<TelegramLoginResult> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   if (!botToken) return { ok: false, error: "Вход по Telegram пока не настроен." };
 
-  const tg = verifyTelegramInitData(initData, botToken);
+  const botId = process.env.NEXT_PUBLIC_TELEGRAM_BOT_ID ?? "";
+  const tg = initData
+    ? verifyTelegramInitData(initData, botToken)
+    : idToken && botId
+      ? await verifyTelegramIdToken(idToken, botId)
+      : null;
+
   if (!tg) return { ok: false, error: "Данные Telegram не прошли проверку. Попробуйте ещё раз." };
 
   const admin = createAdminClient();

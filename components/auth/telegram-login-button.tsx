@@ -42,21 +42,29 @@ export function TelegramLoginButton({ clientId, next }: { clientId?: string; nex
     let done = false;
     const handle = async (err: string | null, payload: unknown) => {
       if (done || err) return;
-      const data = payload as { id?: number; hash?: string; auth_date?: number } | undefined;
-      const initData =
-        data && data.id && data.hash
-          ? `id=${data.id}&hash=${data.hash}&auth_date=${data.auth_date ?? 0}`
-          : null;
-      if (!initData) {
+      // Depending on the BotFather configuration the widget returns either a
+      // bot-token-signed blob or an OIDC id_token; forward whichever we got.
+      const p = (payload ?? {}) as {
+        id?: number;
+        hash?: string;
+        auth_date?: number;
+        id_token?: string;
+        access_token?: string;
+      };
+
+      const initData = p.id && p.hash ? `id=${p.id}&hash=${p.hash}&auth_date=${p.auth_date ?? 0}` : undefined;
+      const idToken = p.id_token;
+      if (!initData && !idToken) {
         setError("Telegram не передал данные. Попробуйте ещё раз.");
         return;
       }
+
       setPending(true);
       try {
         const res = await fetch("/api/auth/telegram", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ initData }),
+          body: JSON.stringify(initData ? { initData } : { idToken }),
         });
         const body = (await res.json()) as { ok: boolean; tokenHash?: string; error?: string };
         if (!body.ok || !body.tokenHash) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHash, createHmac } from "node:crypto";
-import { telegramChatId, telegramSyntheticEmail, verifyTelegramInitData } from "./verify";
+import { telegramChatId, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData } from "./verify";
 
 const BOT_TOKEN = "123456:TEST_TOKEN_FOR_UNIT_TESTS";
 
@@ -124,5 +124,38 @@ describe("telegramChatId", () => {
 describe("telegramSyntheticEmail", () => {
   it("builds a stable, non-deliverable address", () => {
     expect(telegramSyntheticEmail(55512345)).toBe("tg55512345@telegram.bookroom.invalid");
+  });
+});
+
+describe("verifyTelegramIdToken", () => {
+  const BOT_ID = "8822412364";
+
+  function jwt(header: unknown, payload: unknown, signature = "sig") {
+    const b = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    return `${b(header)}.${b(payload)}.${signature}`;
+  }
+
+  it("rejects a token that is not a JWT", async () => {
+    expect(await verifyTelegramIdToken("garbage", BOT_ID)).toBeNull();
+  });
+
+  it("rejects a wrong issuer", async () => {
+    const token = jwt({ alg: "RS256", kid: "oidc-1" }, { iss: "https://evil.example", aud: BOT_ID, sub: "1", exp: 9999999999 });
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects a token issued for another bot", async () => {
+    const token = jwt({ alg: "RS256", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: "42", sub: "1", exp: 9999999999 });
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects an expired token", async () => {
+    const token = jwt({ alg: "RS256", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: BOT_ID, sub: "1", exp: 1 });
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects a non-RS256 algorithm (no algorithm downgrade)", async () => {
+    const token = jwt({ alg: "none", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: BOT_ID, sub: "1", exp: 9999999999 });
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
   });
 });
