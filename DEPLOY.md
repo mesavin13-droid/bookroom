@@ -3,6 +3,20 @@
 Проект использует Supabase (Postgres + Auth + Storage) с полностью RLS-обёрнутой схемой.
 Локально нужен Docker; в проде — облачный проект.
 
+## Текущее состояние
+
+Облачный проект `klcqalehqhhmjfvlpakl` («booktoom») развёрнут, все 7 миграций применены.
+Проверено: 21 таблица, RLS включён на всех 20 таблицах `public`, exclusion constraint
+`appointments_no_overlap`, 31 триггер, 41 функция, бакеты `avatars` / `gallery` / `studio-assets`.
+
+> ⚠️ **Ключи.** На этом проекте новый формат `sb_secret_...` возвращает **401**.
+> Рабочий ключ — legacy JWT `service_role` (`eyJ...`). Это проверено запросом к REST API.
+> Если проект переведён на новые ключи, замените `SUPABASE_SERVICE_ROLE_KEY` в Vercel.
+
+> ⚠️ **Пароль БД не совпадает с ключами API.** `supabase db push` требует именно пароль БД
+> из Settings → Database. С персональным токеном (Management API) миграции применяются
+> через `POST /v1/projects/<ref>/database/query`.
+
 ## Вариант A. Облачный Supabase (для Vercel)
 
 ### 1. Создать проект
