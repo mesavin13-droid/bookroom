@@ -6,7 +6,18 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, hasServiceRole } from "@/lib/supabase/admin";
 import { cancelSchema, createBookingSchema, fieldErrorsFrom, rescheduleSchema, reviewSchema } from "@/lib/validations";
 import { errorCode, humanizeError } from "@/lib/booking/errors";
+import { dispatchTelegram } from "@/lib/telegram/dispatch";
 import type { ActionResult, BookingDetails } from "@/types";
+
+/**
+ * Pushes any queued Telegram notifications without blocking the response.
+ * A failed push must never turn a successful booking into an error, so the
+ * result is deliberately swallowed and pg_cron retries leftovers later.
+ */
+function flushTelegram() {
+  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.SUPABASE_SERVICE_ROLE_KEY) return;
+  void dispatchTelegram(20).catch((err) => console.error("[telegram] dispatch failed", err));
+}
 
 export async function createBooking(input: unknown): Promise<ActionResult<{ token: string; status: string }>> {
   const parsed = createBookingSchema.safeParse(input);
@@ -30,6 +41,7 @@ export async function createBooking(input: unknown): Promise<ActionResult<{ toke
     });
     if (error) return { ok: false, error: humanizeError(error, "Не удалось создать запись. Попробуйте ещё раз."), code: errorCode(error) };
     revalidatePath(`/s/${v.slug}`);
+    flushTelegram();
     return { ok: true, data: { token: data.token as string, status: data.status as string } };
   } catch (err) {
     return { ok: false, error: humanizeError(err, "Не удалось создать запись. Попробуйте ещё раз.") };
@@ -46,6 +58,7 @@ export async function rescheduleBooking(input: unknown): Promise<ActionResult<{ 
       p_start_at: parsed.data.startAt,
     });
     if (error) return { ok: false, error: humanizeError(error, "Не удалось перенести запись."), code: errorCode(error) };
+    flushTelegram();
     return { ok: true, data: { token: data.token as string } };
   } catch (err) {
     return { ok: false, error: humanizeError(err) };
@@ -63,6 +76,7 @@ export async function cancelBooking(input: unknown): Promise<ActionResult> {
     });
     if (error) return { ok: false, error: humanizeError(error, "Не удалось отменить запись."), code: errorCode(error) };
     revalidatePath("/account", "layout");
+    flushTelegram();
     return { ok: true };
   } catch (err) {
     return { ok: false, error: humanizeError(err) };

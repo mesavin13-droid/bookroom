@@ -108,3 +108,64 @@ insert into public.platform_admin_emails (email) values ('вы@example.com');
 5. `SUPABASE_SERVICE_ROLE_KEY` — только в переменных сервера, без префикса `NEXT_PUBLIC_`.
 
 Подробности модели доступа — в [SECURITY.md](SECURITY.md).
+
+---
+
+## Telegram: вход, пуши и Mini App
+
+Telegram-слой уже развёрнут: миграция `supabase/migrations/20261004000800_telegram.sql`.
+
+### Почему вход сделан вручную
+
+Supabase Auth не умеет вход через Telegram «из коробки». Telegram перешёл на OIDC и
+подписал ключи кривой `secp256k1`, которую библиотека `go-jose` в gotrue не поддерживает
+([supabase/auth#2534](https://github.com/supabase/auth/issues/2534), фикс
+[#2548](https://github.com/supabase/auth/pull/2548) не задеплоен). Поэтому вход
+проверяется собственным маршрутом `POST /api/auth/telegram`: подпись Telegram
+(HMAC-SHA256 от токена бота) проверяется на сервере, затем выдаётся сессия Supabase.
+
+### Переменные окружения
+
+| Переменная | Где | Пример |
+| --- | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | только сервер (Secret) | `123456:AA...` |
+| `TELEGRAM_DISPATCH_SECRET` | только сервер (Secret), совпадает с Vault | случайная строка |
+| `NEXT_PUBLIC_TELEGRAM_BOT_ID` | клиент (Config) | `8822412364` |
+| `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | клиент (Config) | `svn_nskbot` |
+
+Токен бота **никогда** не попадает в браузер.
+
+### Vault (для pg_cron-страховки)
+
+Планировщик дренирует очередь раз в 5 минут на случай, если процесс оборвался
+после создания записи:
+
+```sql
+select vault.create_secret('<dispatch secret>', 'bookroom_telegram_dispatch',
+                           'Shared secret for the Telegram dispatcher');
+select vault.create_secret('https://<host>/api/internal/telegram/dispatch',
+                           'bookroom_telegram_dispatch_url', 'Dispatcher endpoint');
+```
+
+Задание уже создано: `cron.job` → `bookroom-telegram-dispatch` (`*/5 * * * *`).
+
+### Mini App в @BotFather
+
+1. `/newbot` — создать бота.
+2. **Login Widget** — включить scopes `Email` и `Phone`, алгоритм `RS256`,
+   добавить домен приложения.
+3. **Menu Button** — указать `https://<host>/tg` (обязательно HTTPS).
+
+### Как включить пуши
+
+1. Владелец открывает `/admin/settings` → раздел **Telegram** → «Подключить».
+2. Открывает бота и жмёт **Старт** (без этого бот не может писать).
+3. Возвращается и жмёт «Готово» — чат сохраняется, канал включается автоматически.
+
+### Ограничения Telegram
+
+- Бот не пишет пользователю, который не нажал «Старт». Это не обходится.
+- Сообщения приходят, пока чат открыт или включены уведомления. Для критичных
+  событий дублируйте на email.
+- Вход по номеру возможен **без SMS-провайдера**: Telegram отдаёт
+  подтверждённый телефон (`phone_number_verified`), который подставляется в профиль.

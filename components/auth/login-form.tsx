@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/ui/field";
 import { createClient } from "@/lib/supabase/client";
 import { claimMyClients } from "@/actions/auth";
+import { TelegramLoginButton } from "@/components/auth/telegram-login-button";
 import { maskPhone, normalizePhone } from "@/lib/phone";
 import { safeNext } from "@/lib/safe-redirect";
 import { cn } from "@/lib/utils";
@@ -28,10 +29,11 @@ function authMessage(message: string | undefined) {
   return "Не получилось войти. Попробуйте ещё раз.";
 }
 
-export function LoginForm({ defaultNext }: { defaultNext?: string } = {}) {
+export function LoginForm({ defaultNext, telegramClientId }: { defaultNext?: string; telegramClientId?: string } = {}) {
   const router = useRouter();
   const sp = useSearchParams();
   const next = safeNext(sp.get("next") ?? defaultNext ?? null);
+  const clientId = telegramClientId;
   const [mode, setMode] = React.useState<Mode>(sp.get("phone") ? "phone" : "email");
   const [stage, setStage] = React.useState<Stage>("identify");
   const [email, setEmail] = React.useState(sp.get("email") ?? "");
@@ -126,6 +128,17 @@ export function LoginForm({ defaultNext }: { defaultNext?: string } = {}) {
       )}
 
       {stage === "identify" && (
+        <>
+          {clientId && (
+            <>
+              <TelegramLoginButton clientId={clientId} />
+              <div className="flex items-center gap-3 text-xs text-subtle">
+                <span className="h-px flex-1 bg-border" />
+                или
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            </>
+          )}
         <form onSubmit={requestCode} className="grid gap-4" noValidate>
           {mode === "email" ? (
             <Field label="Email" htmlFor="email">
@@ -145,6 +158,7 @@ export function LoginForm({ defaultNext }: { defaultNext?: string } = {}) {
             </button>
           )}
         </form>
+        </>
       )}
 
       {stage === "password" && (

@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/admin/page-header";
 import { BookingSettingsForm, BrandImage, GalleryManager, StudioProfileForm } from "@/components/admin/settings-forms";
+import { ConnectTelegramButton } from "@/components/admin/telegram-connect";
 import { requireManagerPage } from "@/lib/admin/context";
 import { formatPhone } from "@/lib/format";
 import type { Media, Studio, StudioSettings } from "@/types";
@@ -39,6 +40,18 @@ export default async function SettingsPage() {
             vertical: s.vertical,
             isPublished: s.is_published,
           }}
+        />
+      </section>
+
+      <section id="telegram" className="mt-14 grid scroll-mt-24 gap-6 border-t border-border pt-10">
+        <div>
+          <h2 className="text-xl font-medium">Telegram</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Сообщения о новых записях, отменах и переносах.</p>
+        </div>
+        <ConnectTelegramButton
+          studioId={s.id}
+          botUsername={process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME}
+          connected={Boolean(s.owner_telegram_chat_id)}
         />
       </section>
 

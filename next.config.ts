@@ -22,14 +22,18 @@ const supabaseWs = supabaseOrigin.replace(/^http/, "ws");
 // scripts (no user content is ever rendered as HTML). Everything else is locked down.
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  // telegram.org hosts the Login Widget SDK; api.telegram.org is only used
+  // server-side, but is allowed here because Next.js may inline prefetches.
+  `script-src 'self' 'unsafe-inline' https://telegram.org${isDev ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:" + (isDev ? " http://127.0.0.1:54321 http://localhost:54321" : ""),
   "font-src 'self' data:",
-  `connect-src 'self' ${supabaseOrigin} ${supabaseWs}${isDev ? " ws: http://127.0.0.1:54321 http://localhost:54321" : ""}`.trim(),
+  `connect-src 'self' ${supabaseOrigin} ${supabaseWs} https://api.telegram.org${isDev ? " ws: http://127.0.0.1:54321 http://localhost:54321" : ""}`.trim(),
   "worker-src 'self'",
   "manifest-src 'self'",
-  "frame-src 'none'",
+  // Telegram opens the Login Widget in a popup frame. Pinning the origin keeps
+  // any other third-party framing blocked.
+  "frame-src https://oauth.telegram.org",
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",

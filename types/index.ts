@@ -34,6 +34,7 @@ export interface Studio {
   currency: string;
   is_published: boolean;
   vertical: StudioVertical;
+  owner_telegram_chat_id?: string | null;
   suspended_at?: string | null;
   suspend_reason?: string | null;
 }
