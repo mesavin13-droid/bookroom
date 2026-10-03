@@ -25,7 +25,9 @@ const FEATURES = [
 ];
 
 export default async function HomePage() {
-  const studios = await listPublishedStudios();
+  // The studios strip is decoration: if Supabase is unreachable (or not configured
+  // yet, e.g. during a build), the landing page must still render and deploy.
+  const studios = await listPublishedStudios().catch(() => []);
 
   return (
     <div className="min-h-dvh">
