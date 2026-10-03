@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Graphite theme. Tokens are OKLCH channels: "L C H". Neutrals tinted toward a cool slate hue (265). */
+@layer base {
+  :root {
+    /* Near-black graphite with a cool blue tint; one saturated accent. */
+    --background: 0.11 0.004 260;
+    --surface: 0.16 0.005 260;
+    --surface-2: 0.2 0.006 260;
+    --surface-3: 0.25 0.007 260;
+    --border: 0.27 0.006 260;
+    --input: 0.3 0.007 260;
+    --subtle: 0.48 0.008 260;
+    --muted-foreground: 0.68 0.008 260;
+    --foreground: 0.97 0.003 260;
+    --primary: 0.68 0.17 255;
+    --primary-foreground: 0.16 0.03 260;
+    --accent: 0.8 0.06 75;
+    --accent-foreground: 0.2 0.02 75;
+    --ring: 0.68 0.17 255;
+    --destructive: 0.66 0.15 25;
+    --success: 0.76 0.12 155;
+    --warning: 0.8 0.11 80;
+    --radius: 1.75rem;
+    color-scheme: dark;
+  }
+
+  * { @apply border-border; }
+  html { -webkit-tap-highlight-color: transparent; }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-optical-sizing: auto;
+    letter-spacing: 0.005em;
+    line-height: 1.55;
+  }
+  h1, h2, h3 { text-wrap: balance; letter-spacing: -0.025em; line-height: 1.08; }
+  p { text-wrap: pretty; }
+  ::selection { background: oklch(var(--foreground) / 0.9); color: oklch(var(--background)); }
+  :focus-visible { outline: 2px solid oklch(var(--ring)); outline-offset: 2px; }
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.85); }
+}
+
+@layer components {
+  .eyebrow { @apply text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-muted-foreground; }
+  .hairline { @apply border-t border-border; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+  .stagger > * { animation: fade-up 520ms cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
+}
+
+@keyframes fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Glow panel: animated dot-matrix light that drifts and shifts hue ---------- */
+@layer components {
+  .glow-panel { position: relative; isolation: isolate; overflow: hidden; }
+  .glow-panel::before,
+  .glow-panel::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    -webkit-mask: radial-gradient(circle, #000 1.1px, transparent 1.45px) 0 0 / 6px 6px;
+    mask: radial-gradient(circle, #000 1.1px, transparent 1.45px) 0 0 / 6px 6px;
+  }
+  .glow-panel::before {
+    inset: -40%;
+    background:
+      radial-gradient(30% 35% at 70% 30%, oklch(0.72 0.18 250 / 0.75), transparent 70%),
+      radial-gradient(25% 30% at 30% 70%, oklch(0.7 0.16 200 / 0.55), transparent 70%),
+      radial-gradient(22% 26% at 80% 80%, oklch(0.66 0.2 285 / 0.5), transparent 70%);
+    animation: glow-drift 14s ease-in-out infinite alternate, glow-hue 9s linear infinite;
+  }
+  .glow-panel::after {
+    inset: -20%;
+    background: radial-gradient(28% 32% at 55% 45%, oklch(0.8 0.12 230 / 0.45), transparent 70%);
+    animation: glow-drift-2 11s ease-in-out infinite alternate;
+    mix-blend-mode: screen;
+  }
+  .duotone { filter: grayscale(1) contrast(1.15) brightness(0.62); }
+  .duotone-wrap { position: relative; }
+  .duotone-wrap::after { content: ""; position: absolute; inset: 0; background: oklch(var(--primary)); mix-blend-mode: color; opacity: 0.85; pointer-events: none; }
+}
+@keyframes glow-drift { 0% { transform: translate(-8%, -6%) rotate(0deg); } 50% { transform: translate(6%, 4%) rotate(8deg); } 100% { transform: translate(10%, -4%) rotate(-6deg); } }
+@keyframes glow-drift-2 { 0% { transform: translate(10%, 8%) scale(1); } 100% { transform: translate(-12%, -6%) scale(1.25); } }
+@keyframes glow-hue { 0% { filter: hue-rotate(0deg); } 50% { filter: hue-rotate(-35deg); } 100% { filter: hue-rotate(0deg); } }
