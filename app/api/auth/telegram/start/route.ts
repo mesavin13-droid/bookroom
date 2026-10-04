@@ -14,13 +14,23 @@ const TTL_MS = 10 * 60 * 1000;
 /** Starts the Telegram OIDC redirect flow. */
 export async function GET(request: Request) {
   if (!process.env.TELEGRAM_LOGIN_CLIENT_SECRET || !clientIdOrNull()) {
-    return NextResponse.redirect(new URL("/login?error=telegram", request.url), 302);
+    return NextResponse.redirect(new URL("/login?error=telegram", SITE_URL), 302);
   }
 
   const url = new URL(request.url);
   const next = safeNext(url.searchParams.get("next"), "/account");
   const { verifier, challenge } = createPkce();
   const state = randomState();
+
+  // The PKCE cookie is host-only, while redirect_uri must be a URL Telegram
+  // has pre-registered (BotFather only accepts those). If someone starts the
+  // flow on another domain of ours, bounce to the canonical one first so the
+  // cookie and the callback land on the same host.
+  if (url.origin !== SITE_URL) {
+    const bounce = new URL("/api/auth/telegram/start", SITE_URL);
+    bounce.searchParams.set("next", next);
+    return NextResponse.redirect(bounce, 302);
+  }
 
   const jar = await cookies();
   jar.set(COOKIE, JSON.stringify({ verifier, state, next, at: Date.now() }), {
