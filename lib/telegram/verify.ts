@@ -1,4 +1,12 @@
-import { createHmac, timingSafeEqual, createHash, createPublicKey, verify } from "node:crypto";
+import {
+  constants,
+  createHmac,
+  timingSafeEqual,
+  createHash,
+  createPublicKey,
+  verify,
+  type JsonWebKey,
+} from "node:crypto";
 
 /**
  * Telegram identity verification.
@@ -125,38 +133,62 @@ export function telegramSyntheticEmail(telegramId: number) {
 
 // ---------------------------------------------------------------------------
 // OIDC mode.
-// The Login Widget may hand back an id_token instead of a bot-token hash, so
-// both shapes are supported. Telegram publishes several keys in its JWKS and
-// one of them is secp256k1, which is what breaks go-jose (and therefore
-// Supabase Auth). We pick the RSA key by kid and ignore the rest.
+// The login flow may hand back an id_token instead of a bot-token hash, so both
+// shapes are supported.
+//
+// Telegram publishes four keys and lets the bot owner pick the signing algorithm
+// in BotFather (Login Widget -> Advanced), so verification cannot hardcode
+// RS256: RS*, PS*, ES256, ES256K and EdDSA all have to work. Supabase Auth
+// cannot follow along because its go-jose verifier rejects the secp256k1 key.
 // ---------------------------------------------------------------------------
 const JWKS_URL = "https://oauth.telegram.org/.well-known/jwks.json";
 const ISSUER = "https://oauth.telegram.org";
-let jwksCache: { keys: { kid: string; n: string; e: string }[] } | null = null;
+
+type Jwk = { kid?: string; kty?: string; alg?: string; crv?: string; n?: string; e?: string; x?: string; y?: string };
+
+let jwksCache: Jwk[] | null = null;
 let jwksFetchedAt = 0;
 
-async function rsaKey(kid: string, n: string, e: string) {
-  const b64 = (s: string) => Buffer.from(s, "base64url");
-  return createPublicKey({ key: { kty: "RSA", n: b64(n).toString("base64"), e: b64(e).toString("base64") }, format: "jwk" });
+/** Algorithms we accept, mapped to the Node crypto verification call. */
+const ALGOS = {
+  RS256: { type: "rsa", digest: "RSA-SHA256" },
+  RS384: { type: "rsa", digest: "RSA-SHA384" },
+  RS512: { type: "rsa", digest: "RSA-SHA512" },
+  PS256: { type: "rsa-pss", digest: "RSA-SHA256", pss: true },
+  PS384: { type: "rsa-pss", digest: "RSA-SHA384", pss: true },
+  PS512: { type: "rsa-pss", digest: "RSA-SHA512", pss: true },
+  ES256: { type: "ecdsa", digest: "SHA256" },
+  ES256K: { type: "ecdsa", digest: "SHA256" },
+  EdDSA: { type: "ed25519", digest: null },
+} as const satisfies Record<string, { type: string; digest: string | null; pss?: boolean }>;
+
+type KnownAlg = keyof typeof ALGOS;
+
+/** Key type the algorithm requires, so a curve mismatch cannot slip through. */
+function expectedKty(alg: KnownAlg) {
+  if (ALGOS[alg].type === "ed25519") return "OKP";
+  if (ALGOS[alg].type === "ecdsa") return "EC";
+  return "RSA";
 }
 
-async function getRsaKey(kid: string) {
+async function getKey(kid: string, alg: KnownAlg) {
   const stale = Date.now() - jwksFetchedAt > 60 * 60 * 1000;
   if (!jwksCache || stale) {
     const res = await fetch(JWKS_URL, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) return null;
-    const body = (await res.json()) as { keys?: Record<string, string>[] };
-    // Keep only RSA keys: the EC/OKP entries are the ones that trip verifiers.
-    jwksCache = {
-      keys: (body.keys ?? [])
-        .filter((k) => k.kty === "RSA" && k.kid && k.n && k.e)
-        .map((k) => ({ kid: k.kid!, n: k.n!, e: k.e! })),
-    };
+    const body = (await res.json()) as { keys?: Jwk[] };
+    jwksCache = body.keys ?? [];
     jwksFetchedAt = Date.now();
   }
-  const found = jwksCache.keys.find((k) => k.kid === kid);
+  // The kid alone is not enough: require the key type to match the algorithm so
+  // an RSA key can never be handed to an ECDSA check.
+  const found = jwksCache.find((k) => k.kid === kid && k.kty === expectedKty(alg));
   if (!found) return null;
-  return rsaKey(found.kid, found.n, found.e);
+  try {
+    return createPublicKey({ key: found as unknown as JsonWebKey, format: "jwk" });
+  } catch {
+    return null;
+  }
 }
 
 /** Verifies a Telegram OIDC id_token and extracts the user claims. */
@@ -177,7 +209,10 @@ export async function verifyTelegramIdToken(
     return null;
   }
 
-  if (header.alg !== "RS256" || !header.kid) return null;
+  // Only algorithms we can actually verify; "none" and anything unknown is out.
+  const alg = header.alg as KnownAlg | undefined;
+  if (!alg || !Object.prototype.hasOwnProperty.call(ALGOS, alg)) return null;
+  if (!header.kid) return null;
   if (payload.iss !== ISSUER) return null;
   // aud must be this bot, never another one.
   const aud = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
@@ -186,12 +221,25 @@ export async function verifyTelegramIdToken(
   const exp = Number(payload.exp ?? 0);
   if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return null;
 
-  const key = await getRsaKey(header.kid);
+  const key = await getKey(header.kid, alg);
   if (!key) return null;
 
   let valid = false;
   try {
-    valid = verify("RSA-SHA256", Buffer.from(p), key, Buffer.from(sig, "base64url"));
+    const spec = ALGOS[alg];
+    if (spec.type === "rsa-pss") {
+      // RSA-PSS needs an explicit padding and salt length; a plain "rsa-pss"
+      // call without them would silently accept PKCS#1 v1.5 signatures.
+      valid = verify(spec.digest as string, Buffer.from(p), {
+        key,
+        padding: constants.RSA_PKCS1_PSS_PADDING,
+        saltLength: constants.RSA_PSS_SALTLEN_DIGEST,
+      }, Buffer.from(sig, "base64url"));
+    } else if (spec.digest === null) {
+      valid = verify(null, Buffer.from(p), key, Buffer.from(sig, "base64url"));
+    } else {
+      valid = verify(spec.digest, Buffer.from(p), key, Buffer.from(sig, "base64url"));
+    }
   } catch {
     return null;
   }

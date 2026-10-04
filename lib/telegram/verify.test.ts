@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createHash, createHmac } from "node:crypto";
+import { constants, createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
 import { telegramChatId, telegramStartParam, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData } from "./verify";
 
 const BOT_TOKEN = "123456:TEST_TOKEN_FOR_UNIT_TESTS";
@@ -156,6 +156,79 @@ describe("verifyTelegramIdToken", () => {
 
   it("rejects a non-RS256 algorithm (no algorithm downgrade)", async () => {
     const token = jwt({ alg: "none", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: BOT_ID, sub: "1", exp: 9999999999 });
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects alg=none even when a kid is present", async () => {
+    const b = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const payload = { iss: "https://oauth.telegram.org", aud: BOT_ID, sub: "1", exp: 9999999999 };
+    const token = `${b({ alg: "none", kid: "oidc-1" })}.${b(payload)}.`;
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects a symmetric algorithm (HS256) we cannot verify safely", async () => {
+    const token = jwt({ alg: "HS256", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: BOT_ID, sub: "1", exp: 9999999999 });
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects an unknown kid", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const b = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const signing = `${b({ alg: "RS256", kid: "attacker-key" })}.${b({
+      iss: "https://oauth.telegram.org",
+      aud: BOT_ID,
+      sub: "1",
+      exp: 9999999999,
+    })}`;
+    const token = `${signing}.${sign("RSA-SHA256", Buffer.from(signing), privateKey).toString("base64url")}`;
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("refuses to use the RSA key for an ECDSA algorithm (kty mismatch)", async () => {
+    // oidc-1 is Telegram's RSA key. Claiming ES256 with that kid must not
+    // borrow it, otherwise key/algorithm confusion becomes possible.
+    const token = jwt({ alg: "ES256", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: BOT_ID, sub: "1", exp: 9999999999 }, "sig");
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects a token signed by an unrelated RSA key", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const b = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const signing = `${b({ alg: "RS256", kid: "oidc-1" })}.${b({
+      iss: "https://oauth.telegram.org",
+      aud: BOT_ID,
+      sub: "1",
+      exp: 9999999999,
+    })}`;
+    const token = `${signing}.${sign("RSA-SHA256", Buffer.from(signing), privateKey).toString("base64url")}`;
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects an expired token", async () => {
+    const token = jwt({ alg: "RS256", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: BOT_ID, sub: "1", exp: 1000 });
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("rejects a token minted for a different bot", async () => {
+    const token = jwt({ alg: "RS256", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: "1111111111", sub: "1", exp: 9999999999 });
+    expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+
+  it("keeps PS256 verification strict (no PKCS#1 downgrade)", async () => {
+    // A PS256 header with a PKCS#1 v1.5 signature must not be accepted.
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+    const b = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const signing = `${b({ alg: "PS256", kid: "oidc-1" })}.${b({
+      iss: "https://oauth.telegram.org",
+      aud: BOT_ID,
+      sub: "1",
+      exp: 9999999999,
+    })}`;
+    const v15 = sign("sha256", Buffer.from(signing), {
+      key: privateKey,
+      padding: constants.RSA_PKCS1_PADDING,
+    });
+    const token = `${signing}.${v15.toString("base64url")}`;
     expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
   });
 });
