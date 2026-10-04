@@ -13,6 +13,26 @@ const SDK_URL = "https://telegram.org/js/telegram-web-app.js";
 const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
 
 /**
+ * Opens a link from inside a Mini App.
+ *
+ * A plain anchor is swallowed by the Telegram WebView, so it has to go through
+ * WebApp.openLink when that is available; otherwise a normal browser is fine.
+ */
+function openExternal(url: string) {
+  const w = window as Window & { Telegram?: { WebApp?: { openLink?: (u: string) => void } } };
+  const open = w.Telegram?.WebApp?.openLink;
+  if (open) {
+    try {
+      open(url);
+      return;
+    } catch {
+      // fall through to a plain navigation
+    }
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/**
  * Waits for the Telegram WebApp SDK to appear.
  *
  * The script is injected by Next at runtime, so `window.Telegram.WebApp` is not
@@ -123,12 +143,13 @@ export default function TelegramAppPage() {
             <h1 className="text-xl font-medium">Не удалось войти</h1>
             <p className="max-w-sm text-muted-foreground">{message}</p>
             {botUsername && (
-              <a
-                href={`https://t.me/${botUsername.replace(/^@/, "")}`}
+              <button
+                type="button"
+                onClick={() => openExternal(`https://t.me/${botUsername.replace(/^@/, "")}`)}
                 className="mt-2 inline-flex h-10 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground"
               >
                 Открыть бота
-              </a>
+              </button>
             )}
           </>
         )}

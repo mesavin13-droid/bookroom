@@ -51,33 +51,47 @@ function parseInitData(initData: string) {
   return { hash, dataCheckString, params };
 }
 
+/** Why an initData payload was rejected. Useful in server logs, never shown raw. */
+export type InitDataFailure =
+  | "missing_hash"
+  | "bad_signature"
+  | "missing_auth_date"
+  | "expired"
+  | "future_dated"
+  | "missing_user"
+  | "bad_user";
+
+export type InitDataResult = { ok: true; user: TelegramUser } | { ok: false; reason: InitDataFailure };
+
 /**
- * Validates initData and returns the user, or null when the signature is
- * invalid, the payload is too old, or Telegram reported an auth_date far in
- * the future (clock skew abuse).
+ * Validates initData step by step and reports where it failed.
+ *
+ * A stale payload (replay window) and a forged signature are both security
+ * rejects, but they mean very different things operationally, so callers can
+ * tell them apart in logs.
  */
-export function verifyTelegramInitData(
+export function verifyTelegramInitDataDetailed(
   initData: TelegramInitData,
   botToken: string,
   maxAgeSeconds = MAX_AGE_SECONDS,
-): TelegramUser | null {
-  if (!initData || !botToken) return null;
+): InitDataResult {
+  if (!initData || !botToken) return { ok: false, reason: "bad_signature" };
   const parsed = parseInitData(initData);
-  if (!parsed) return null;
+  if (!parsed) return { ok: false, reason: "missing_hash" };
 
   const secret = createHash("sha256").update(botToken).digest();
   const expected = createHmac("sha256", secret).update(parsed.dataCheckString).digest("hex");
-  if (!safeEqual(expected, parsed.hash)) return null;
+  if (!safeEqual(expected, parsed.hash)) return { ok: false, reason: "bad_signature" };
 
   const authDate = Number(parsed.params.get("auth_date") ?? "0");
-  if (!Number.isFinite(authDate) || authDate <= 0) return null;
+  if (!Number.isFinite(authDate) || authDate <= 0) return { ok: false, reason: "missing_auth_date" };
   const age = Math.floor(Date.now() / 1000) - authDate;
-  if (age > maxAgeSeconds) return null;
+  if (age > maxAgeSeconds) return { ok: false, reason: "expired" };
   // Reject payloads from the future: they would otherwise never expire.
-  if (age < -300) return null;
+  if (age < -300) return { ok: false, reason: "future_dated" };
 
   const rawUser = parsed.params.get("user");
-  if (!rawUser) return null;
+  if (!rawUser) return { ok: false, reason: "missing_user" };
   try {
     const u = JSON.parse(rawUser) as {
       id: number;
@@ -89,19 +103,36 @@ export function verifyTelegramInitData(
       photo_url?: string;
     };
     const id = Number(u.id);
-    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, reason: "bad_user" };
     const name = [u.first_name, u.last_name].filter(Boolean).join(" ").trim();
     return {
-      id,
-      username: u.username ?? null,
-      name: name || null,
-      phone: u.phone_number ?? null,
-      phoneVerified: Boolean(u.phone_number_verified),
-      photoUrl: u.photo_url ?? null,
+      ok: true,
+      user: {
+        id,
+        username: u.username ?? null,
+        name: name || null,
+        phone: u.phone_number ?? null,
+        phoneVerified: Boolean(u.phone_number_verified),
+        photoUrl: u.photo_url ?? null,
+      },
     };
   } catch {
-    return null;
+    return { ok: false, reason: "bad_user" };
   }
+}
+
+/**
+ * Validates initData and returns the user, or null when the signature is
+ * invalid, the payload is too old, or Telegram reported an auth_date far in
+ * the future (clock skew abuse).
+ */
+export function verifyTelegramInitData(
+  initData: TelegramInitData,
+  botToken: string,
+  maxAgeSeconds = MAX_AGE_SECONDS,
+): TelegramUser | null {
+  const result = verifyTelegramInitDataDetailed(initData, botToken, maxAgeSeconds);
+  return result.ok ? result.user : null;
 }
 
 /** Chat id of the Mini App session, when the app was launched from a chat. */

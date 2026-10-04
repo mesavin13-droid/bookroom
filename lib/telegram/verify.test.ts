@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from "vitest";
 // `sign` is aliased: this file already has a local helper by that name.
 import { constants, createHash, createHmac, generateKeyPairSync, sign as cryptoSign } from "node:crypto";
-import { telegramChatId, telegramStartParam, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData } from "./verify";
+import { telegramChatId, telegramStartParam, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData, verifyTelegramInitDataDetailed } from "./verify";
 
 const BOT_TOKEN = "123456:TEST_TOKEN_FOR_UNIT_TESTS";
 
@@ -231,6 +231,45 @@ describe("verifyTelegramIdToken", () => {
     });
     const token = `${signing}.${v15.toString("base64url")}`;
     expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+});
+
+describe("verifyTelegramInitDataDetailed", () => {
+  const base = { auth_date: String(freshAuthDate()), user: JSON.stringify({ id: 7, first_name: "A" }) };
+
+  it("accepts a fresh, correctly signed payload", () => {
+    const r = verifyTelegramInitDataDetailed(sign({ ...base }), BOT_TOKEN);
+    expect(r.ok).toBe(true);
+  });
+
+  it("reports 'expired' for a stale payload (cached WebView)", () => {
+    const old = String(Math.floor(Date.now() / 1000) - 7200);
+    const r = verifyTelegramInitDataDetailed(sign({ ...base, auth_date: old }), BOT_TOKEN);
+    expect(r).toEqual({ ok: false, reason: "expired" });
+  });
+
+  it("reports 'bad_signature' when the token does not match", () => {
+    const r = verifyTelegramInitDataDetailed(sign({ ...base }), "999999:OTHER");
+    expect(r).toEqual({ ok: false, reason: "bad_signature" });
+  });
+
+  it("reports 'missing_hash' when the signature is absent", () => {
+    expect(verifyTelegramInitDataDetailed(`auth_date=${freshAuthDate()}`, BOT_TOKEN)).toEqual({
+      ok: false,
+      reason: "missing_hash",
+    });
+  });
+
+  it("reports 'missing_user' when the user blob is absent", () => {
+    const r = verifyTelegramInitDataDetailed(sign({ auth_date: base.auth_date }), BOT_TOKEN);
+    expect(r).toEqual({ ok: false, reason: "missing_user" });
+  });
+
+  it("keeps the simple API in sync with the detailed one", () => {
+    const ok = verifyTelegramInitData(sign({ ...base }), BOT_TOKEN);
+    expect(ok?.id).toBe(7);
+    const old = String(Math.floor(Date.now() / 1000) - 7200);
+    expect(verifyTelegramInitData(sign({ ...base, auth_date: old }), BOT_TOKEN)).toBeNull();
   });
 });
 

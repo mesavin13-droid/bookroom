@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { linkTelegramIdentity } from "@/lib/telegram/link-identity";
-import { telegramChatId, telegramStartParam, verifyTelegramInitData } from "@/lib/telegram/verify";
+import { telegramChatId, telegramStartParam, verifyTelegramInitDataDetailed } from "@/lib/telegram/verify";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -34,13 +34,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Вход через Telegram временно недоступен." }, { status: 503 });
   }
 
-  const tg = verifyTelegramInitData(initData, botToken);
-  if (!tg) {
-    // Either the signature does not match (stale token, or someone forging) or
-    // auth_date is outside the replay window. Both are a hard reject.
-    console.warn("[telegram/session] initData signature or freshness check failed");
+  const checked = verifyTelegramInitDataDetailed(initData, botToken);
+  if (!checked.ok) {
+    // Stale payload (cached WebView) and a genuine signature mismatch are both
+    // rejects, but they call for very different fixes, so log which one it was.
+    console.warn("[telegram/session] initData rejected:", checked.reason);
     return NextResponse.json({ ok: false, error: "Данные Telegram не прошли проверку." }, { status: 401 });
   }
+  const tg = checked.user;
 
   const result = await linkTelegramIdentity(tg);
   if (!result.ok) {
