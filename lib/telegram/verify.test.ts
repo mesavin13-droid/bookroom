@@ -18,6 +18,21 @@ function sign(fields: Record<string, string>, token = BOT_TOKEN) {
   return params.toString();
 }
 
+/** Builds initData the way Telegram does: percent-encoding per RFC 3986, so a
+ * literal "+" (e.g. a phone number) stays a plus and is not turned into a space. */
+function signTelegramStyle(fields: Record<string, string>, token = BOT_TOKEN) {
+  const dataCheckString = Object.entries(fields)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n");
+  const secret = createHash("sha256").update(token).digest();
+  const hash = createHmac("sha256", secret).update(dataCheckString).digest("hex");
+  const query = Object.entries(fields)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+  return `${query}&hash=${hash}`;
+}
+
 const freshAuthDate = () => Math.floor(Date.now() / 1000);
 
 describe("verifyTelegramInitData", () => {
@@ -231,6 +246,37 @@ describe("verifyTelegramIdToken", () => {
     });
     const token = `${signing}.${v15.toString("base64url")}`;
     expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+});
+
+describe("telegram initData encoding", () => {
+  const auth_date = String(freshAuthDate());
+
+  it("accepts a real-world payload (RFC 3986 percent-encoding)", () => {
+    const initData = signTelegramStyle({
+      auth_date,
+      query_id: "AAH_test",
+      user: JSON.stringify({ id: 42, first_name: "Иван", username: "ivan" }),
+    });
+    expect(verifyTelegramInitData(initData, BOT_TOKEN)?.id).toBe(42);
+  });
+
+  it("keeps a literal plus in a value instead of decoding it as a space", () => {
+    // URLSearchParams decodes "+" as a space, which silently changes the
+    // data_check_string and breaks the signature for any phone number.
+    const initData = signTelegramStyle({
+      auth_date,
+      user: JSON.stringify({ id: 43, phone_number: "+79991234567" }),
+    });
+    expect(verifyTelegramInitData(initData, BOT_TOKEN)?.phone).toBe("+79991234567");
+  });
+
+  it("handles a name containing a plus sign", () => {
+    const initData = signTelegramStyle({
+      auth_date,
+      user: JSON.stringify({ id: 44, first_name: "A+B" }),
+    });
+    expect(verifyTelegramInitData(initData, BOT_TOKEN)?.name).toBe("A+B");
   });
 });
 

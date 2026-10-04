@@ -52,6 +52,9 @@ export async function POST(request: Request) {
         telegramUserId = "unparseable";
       }
       console.warn("[telegram/session] fields:", fields.join(","), "| telegram user id:", telegramUserId);
+      // TEMPORARY diagnostic: lets us reproduce Telegram's exact encoding
+      // offline instead of guessing. Remove once the mismatch is found.
+      console.warn("[telegram/session] RAW:", initData.slice(0, 1200));
     }
     // A cached Telegram webview keeps the original auth_date, so it can look
     // stale long after the user opened the bot. Say so instead of guessing.
