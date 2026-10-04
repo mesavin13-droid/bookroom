@@ -169,7 +169,16 @@ select vault.create_secret('https://<host>/api/internal/telegram/dispatch',
    `/auth/telegram/callback`, иначе Telegram вернёт `redirect_uri` mismatch.
 4. Скопировать **Client Secret** из этого же раздела → добавить в Vercel как
    Secret `TELEGRAM_LOGIN_CLIENT_SECRET`.
-5. **Menu Button** — указать `https://<host>/tg` (обязательно HTTPS).
+5. **Menu Button** — кнопку в чате не нужно настраивать руками в BotFather,
+   она ставится через Bot API (без `chat_id` = кнопка по умолчанию для всех):
+
+   ```
+   POST https://api.telegram.org/bot<TOKEN>/setChatMenuButton
+         ?menu_button={"type":"web_app","text":"BOOKROOM","web_app":{"url":"<SITE_URL>/tg"}}
+   ```
+
+   Ответ должен быть `{"ok":true,"result":true}`. Проверка:
+   `GET /getChatMenuButton` возвращает `web_app.url`.
 
 ### Как включить пуши
 
