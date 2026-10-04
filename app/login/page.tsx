@@ -8,6 +8,7 @@ export const metadata: Metadata = { title: `Вход | ${BRAND.name}`, robots: {
 
 // Public bot id, used to decide whether to show the Telegram button.
 const telegramBotId = process.env.NEXT_PUBLIC_TELEGRAM_BOT_ID;
+const telegramBotUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
 
 export default function LoginPage() {
   return (
@@ -20,7 +21,7 @@ export default function LoginPage() {
         </p>
         <div className="mt-10">
           <Suspense>
-            <LoginForm telegramBotId={telegramBotId} />
+            <LoginForm telegramBotId={telegramBotId} telegramBotUsername={telegramBotUsername} />
           </Suspense>
         </div>
       </div>

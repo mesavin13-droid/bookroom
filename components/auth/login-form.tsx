@@ -53,7 +53,7 @@ function telegramErrorReason(error: string | null, reason: string | null) {
   }
 }
 
-export function LoginForm({ defaultNext, telegramBotId }: { defaultNext?: string; telegramBotId?: string } = {}) {
+export function LoginForm({ defaultNext, telegramBotId, telegramBotUsername }: { defaultNext?: string; telegramBotId?: string; telegramBotUsername?: string } = {}) {
   const router = useRouter();
   const sp = useSearchParams();
   const next = safeNext(sp.get("next") ?? defaultNext ?? null);
@@ -154,7 +154,7 @@ export function LoginForm({ defaultNext, telegramBotId }: { defaultNext?: string
         <>
           {telegramBotId && (
             <>
-              <TelegramLoginButton botId={telegramBotId} next={next} />
+              <TelegramLoginButton botId={telegramBotId} botUsername={telegramBotUsername} next={next} />
               <div className="flex items-center gap-3 text-xs text-subtle">
                 <span className="h-px flex-1 bg-border" />
                 или
