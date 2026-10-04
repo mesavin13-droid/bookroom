@@ -28,8 +28,17 @@ export async function POST(request: Request) {
   }
 
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const tg = botToken ? verifyTelegramInitData(initData, botToken) : null;
+  if (!botToken) {
+    // Misconfiguration, not a bad request: log it, but never tell the client.
+    console.error("[telegram/session] TELEGRAM_BOT_TOKEN is not configured in this deployment");
+    return NextResponse.json({ ok: false, error: "Вход через Telegram временно недоступен." }, { status: 503 });
+  }
+
+  const tg = verifyTelegramInitData(initData, botToken);
   if (!tg) {
+    // Either the signature does not match (stale token, or someone forging) or
+    // auth_date is outside the replay window. Both are a hard reject.
+    console.warn("[telegram/session] initData signature or freshness check failed");
     return NextResponse.json({ ok: false, error: "Данные Telegram не прошли проверку." }, { status: 401 });
   }
 
