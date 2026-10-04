@@ -108,6 +108,16 @@ export function telegramChatId(initData: TelegramInitData): string | null {
   }
 }
 
+/** Value the Mini App was launched with, via BotFather's ?startapp= link. */
+export function telegramStartParam(initData: TelegramInitData): string | null {
+  try {
+    const raw = new URLSearchParams(initData).get("start_param");
+    return raw ? raw.trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Stable synthetic email for a Telegram-only account. */
 export function telegramSyntheticEmail(telegramId: number) {
   return `tg${telegramId}@telegram.bookroom.invalid`;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createHash, createHmac } from "node:crypto";
-import { telegramChatId, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData } from "./verify";
+import { telegramChatId, telegramStartParam, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData } from "./verify";
 
 const BOT_TOKEN = "123456:TEST_TOKEN_FOR_UNIT_TESTS";
 
@@ -157,5 +157,26 @@ describe("verifyTelegramIdToken", () => {
   it("rejects a non-RS256 algorithm (no algorithm downgrade)", async () => {
     const token = jwt({ alg: "none", kid: "oidc-1" }, { iss: "https://oauth.telegram.org", aud: BOT_ID, sub: "1", exp: 9999999999 });
     expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
+  });
+});
+
+describe("telegramStartParam", () => {
+  it("returns the value passed through ?startapp=", () => {
+    expect(telegramStartParam("start_param=6f1c0f1e-1111-4222-8333-444455556666")).toBe(
+      "6f1c0f1e-1111-4222-8333-444455556666",
+    );
+  });
+
+  it("is null when the app was opened without a start link", () => {
+    expect(telegramStartParam("auth_date=1&user=%7B%7D")).toBeNull();
+  });
+
+  it("treats an empty value as absent", () => {
+    expect(telegramStartParam("start_param=")).toBeNull();
+    expect(telegramStartParam("start_param=%20%20")).toBeNull();
+  });
+
+  it("does not throw on garbage input", () => {
+    expect(telegramStartParam("")).toBeNull();
   });
 });

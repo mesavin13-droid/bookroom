@@ -5,7 +5,7 @@ import { humanizeError } from "@/lib/booking/errors";
 import type { TelegramUser } from "@/lib/telegram/verify";
 
 export type LinkResult =
-  | { ok: true; tokenHash: string }
+  | { ok: true; tokenHash: string; userId: string }
   | { ok: false; reason: string; error: string };
 
 /**
@@ -93,5 +93,5 @@ export async function linkTelegramIdentity(tg: TelegramUser): Promise<LinkResult
     return { ok: false, reason: "link_failed", error: linkError ? humanizeError(linkError) : "Не удалось создать сессию." };
   }
 
-  return { ok: true, tokenHash };
+  return { ok: true, tokenHash, userId };
 }

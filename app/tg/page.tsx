@@ -41,7 +41,12 @@ export default function TelegramAppPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ initData }),
         });
-        const body = (await res.json()) as { ok: boolean; tokenHash?: string; error?: string };
+        const body = (await res.json()) as {
+          ok: boolean;
+          tokenHash?: string;
+          landing?: string;
+          error?: string;
+        };
         if (!body.ok || !body.tokenHash) {
           if (!cancelled) {
             setState("denied");
@@ -62,7 +67,9 @@ export default function TelegramAppPage() {
 
         await claimMyClients();
         if (cancelled) return;
-        router.replace("/admin");
+        // The server decides: studio managers land in /admin, everyone else in
+        // /account. Never guess client-side, or clients end up in the dashboard.
+        router.replace(body.landing === "/admin" ? "/admin" : "/account");
         router.refresh();
       } catch {
         if (!cancelled) {
