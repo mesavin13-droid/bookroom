@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { linkTelegramIdentity } from "@/lib/telegram/link-identity";
-import { telegramChatId, telegramStartParam, verifyTelegramInitDataDetailed } from "@/lib/telegram/verify";
+import { telegramChatId, telegramStartParam, verifyTelegramInitDataAsync } from "@/lib/telegram/verify";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -34,32 +34,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "Вход через Telegram временно недоступен." }, { status: 503 });
   }
 
-  const checked = verifyTelegramInitDataDetailed(initData, botToken);
-  if (!checked.ok) {
-    // Stale payload (cached WebView) and a genuine signature mismatch are both
-    // rejects, but they call for very different fixes, so log which one it was.
-    console.warn("[telegram/session] initData rejected:", checked.reason);
-    if (checked.reason === "bad_signature") {
-      // Field names only: no user data, but they distinguish a malformed payload
-      // from one simply signed by a different bot than the one we hold a token for.
-      const fields = [...new URLSearchParams(initData).keys()].sort();
-      console.warn("[telegram/session] fields:", fields.join(","));
-    }
+  // Telegram now signs Mini App initData with Ed25519; the bot-token HMAC is kept
+  // as a fallback for older payloads. Returns null when neither check passes.
+  const botId = process.env.NEXT_PUBLIC_TELEGRAM_BOT_ID ?? "";
+  const tg = await verifyTelegramInitDataAsync(initData, botToken, botId);
+  if (!tg) {
+    console.warn("[telegram/session] initData rejected by both Ed25519 and HMAC checks");
     // A cached Telegram webview keeps the original auth_date, so it can look
     // stale long after the user opened the bot. Say so instead of guessing.
-    const expired = checked.reason === "expired";
+    const age = Number(new URLSearchParams(initData).get("auth_date") ?? "0");
+    const stale = age > 0 && Math.floor(Date.now() / 1000) - age > 3600;
     return NextResponse.json(
       {
         ok: false,
-        error: expired
+        error: stale
           ? "Сессия Telegram устарела. Закройте мини-приложение и откройте бота заново."
           : "Данные Telegram не прошли проверку.",
-        code: checked.reason,
+        code: stale ? "expired" : "bad_signature",
       },
       { status: 401 },
     );
   }
-  const tg = checked.user;
 
   const result = await linkTelegramIdentity(tg);
   if (!result.ok) {

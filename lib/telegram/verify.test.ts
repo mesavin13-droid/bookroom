@@ -1,7 +1,7 @@
 ﻿import { describe, expect, it } from "vitest";
 // `sign` is aliased: this file already has a local helper by that name.
 import { constants, createHash, createHmac, generateKeyPairSync, sign as cryptoSign } from "node:crypto";
-import { telegramChatId, telegramStartParam, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData, verifyTelegramInitDataDetailed } from "./verify";
+import { telegramChatId, telegramStartParam, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData, verifyTelegramInitDataAsync, verifyTelegramInitDataDetailed } from "./verify";
 
 const BOT_TOKEN = "123456:TEST_TOKEN_FOR_UNIT_TESTS";
 
@@ -316,6 +316,37 @@ describe("verifyTelegramInitDataDetailed", () => {
     expect(ok?.id).toBe(7);
     const old = String(Math.floor(Date.now() / 1000) - 7200);
     expect(verifyTelegramInitData(sign({ ...base, auth_date: old }), BOT_TOKEN)).toBeNull();
+  });
+});
+
+describe("verifyTelegramInitDataAsync", () => {
+  const BOT_ID = "8822412364";
+  const base = { auth_date: String(freshAuthDate()), user: JSON.stringify({ id: 77, first_name: "Иван" }) };
+
+  it("falls back to the HMAC path when there is no Ed25519 signature", async () => {
+    const u = await verifyTelegramInitDataAsync(sign({ ...base }), BOT_TOKEN, BOT_ID);
+    expect(u?.id).toBe(77);
+  });
+
+  it("rejects an empty payload", async () => {
+    expect(await verifyTelegramInitDataAsync("", BOT_TOKEN, BOT_ID)).toBeNull();
+  });
+
+  it("rejects a forged Ed25519 signature", async () => {
+    // signature= present, so the Ed25519 path runs and must refuse this garbage.
+    const forged = `${sign({ ...base })}&signature=${"A".repeat(86)}`;
+    expect(await verifyTelegramInitDataAsync(forged, BOT_TOKEN, BOT_ID)).toBeNull();
+  });
+
+  it("rejects a stale payload on the Ed25519 path", async () => {
+    const old = String(Math.floor(Date.now() / 1000) - 7200);
+    const forged = `${sign({ ...base, auth_date: old })}&signature=${"A".repeat(86)}`;
+    expect(await verifyTelegramInitDataAsync(forged, BOT_TOKEN, BOT_ID)).toBeNull();
+  });
+
+  it("rejects an oversized payload", async () => {
+    const huge = "a".repeat(5000);
+    expect(await verifyTelegramInitDataAsync(huge, BOT_TOKEN, BOT_ID)).toBeNull();
   });
 });
 

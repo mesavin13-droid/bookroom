@@ -122,6 +122,74 @@ export function verifyTelegramInitDataDetailed(
 }
 
 /**
+ * Validates initData using the official Telegram library.
+ *
+ * Telegram signs Mini App initData two ways. The classic method is an HMAC keyed
+ * by the bot token; the current one is Ed25519 ("signature" field), verified
+ * against Telegram's public key plus the expected bot id. Real payloads from
+ * @svn_nskbot only satisfy the Ed25519 method: their `hash` is not HMAC of the
+ * bot token, so the token-only check below rejects them. Both paths are kept,
+ * Ed25519 first, and the bot token is only ever used as a fallback.
+ *
+ * Preferring the asymmetric check is also better for key hygiene: no shared
+ * secret is involved in the primary path.
+ */
+export async function verifyTelegramInitDataAsync(
+  initData: TelegramInitData,
+  botToken: string,
+  botId: string,
+  maxAgeSeconds = MAX_AGE_SECONDS,
+): Promise<TelegramUser | null> {
+  if (!initData || initData.length > 4096) return null;
+
+  // Ed25519 path: only applies when Telegram attached a signature.
+  if (initData.includes("signature=") && botId) {
+    try {
+      // The library checks the signature only, so freshness is enforced here.
+      const age = Number(new URLSearchParams(initData).get("auth_date") ?? "0");
+      if (!Number.isFinite(age) || age <= 0) return null;
+      const delta = Math.floor(Date.now() / 1000) - age;
+      if (delta > maxAgeSeconds) return null;
+      if (delta < -300) return null;
+
+      const { isValid3rd } = await import("@tma.js/init-data-node");
+      if (await isValid3rd(initData, Number(botId))) {
+        const { parse } = await import("@tma.js/init-data-node");
+        const u = parse(initData).user as
+          | {
+              id: number;
+              username?: string;
+              first_name?: string;
+              last_name?: string;
+              phone_number?: string;
+              photo_url?: string;
+            }
+          | undefined;
+        const id = Number(u?.id);
+        if (Number.isSafeInteger(id) && id > 0) {
+          const name = [u?.first_name, u?.last_name].filter(Boolean).join(" ").trim();
+          return {
+            id,
+            username: u?.username ?? null,
+            name: name || null,
+            phone: u?.phone_number ?? null,
+            phoneVerified: false,
+            photoUrl: u?.photo_url ?? null,
+          };
+        }
+        return null;
+      }
+    } catch {
+      // Fall through to the token-based check below.
+    }
+  }
+
+  // Classic HMAC path, still used by payloads without an Ed25519 signature.
+  const legacy = verifyTelegramInitDataDetailed(initData, botToken, maxAgeSeconds);
+  return legacy.ok ? legacy.user : null;
+}
+
+/**
  * Validates initData and returns the user, or null when the signature is
  * invalid, the payload is too old, or Telegram reported an auth_date far in
  * the future (clock skew abuse).
