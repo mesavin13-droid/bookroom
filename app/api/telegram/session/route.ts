@@ -39,7 +39,19 @@ export async function POST(request: Request) {
     // Stale payload (cached WebView) and a genuine signature mismatch are both
     // rejects, but they call for very different fixes, so log which one it was.
     console.warn("[telegram/session] initData rejected:", checked.reason);
-    return NextResponse.json({ ok: false, error: "Данные Telegram не прошли проверку." }, { status: 401 });
+    // A cached Telegram webview keeps the original auth_date, so it can look
+    // stale long after the user opened the bot. Say so instead of guessing.
+    const expired = checked.reason === "expired";
+    return NextResponse.json(
+      {
+        ok: false,
+        error: expired
+          ? "Сессия Telegram устарела. Закройте мини-приложение и откройте бота заново."
+          : "Данные Telegram не прошли проверку.",
+        code: checked.reason,
+      },
+      { status: 401 },
+    );
   }
   const tg = checked.user;
 
