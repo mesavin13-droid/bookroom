@@ -18,28 +18,39 @@ const supabaseOrigin = (() => {
 })();
 const supabaseWs = supabaseOrigin.replace(/^http/, "ws");
 
-// Next.js App Router injects inline bootstrap scripts, hence 'unsafe-inline' for
-// scripts (no user content is ever rendered as HTML). Everything else is locked down.
-const csp = [
-  "default-src 'self'",
-  // telegram.org hosts the Login Widget SDK; api.telegram.org is only used
-  // server-side, but is allowed here because Next.js may inline prefetches.
-  `script-src 'self' 'unsafe-inline' https://telegram.org${isDev ? " 'unsafe-eval'" : ""}`,
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:" + (isDev ? " http://127.0.0.1:54321 http://localhost:54321" : ""),
-  "font-src 'self' data:",
-  `connect-src 'self' ${supabaseOrigin} ${supabaseWs} https://api.telegram.org${isDev ? " ws: http://127.0.0.1:54321 http://localhost:54321" : ""}`.trim(),
-  "worker-src 'self'",
-  "manifest-src 'self'",
-  // Telegram opens the Login Widget in a popup frame. Pinning the origin keeps
-  // any other third-party framing blocked.
-  "frame-src https://oauth.telegram.org",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  ...(isDev ? [] : ["upgrade-insecure-requests"]),
-].join("; ");
+/**
+ * Builds the CSP.
+ *
+ * `frameAncestors` is the only part that differs per route: Telegram embeds the
+ * Mini App in an iframe from web.telegram.org, and Chromium reports a blocked
+ * frame as "site refused to connect". Everything else stays locked down.
+ */
+function buildCsp(frameAncestors: string) {
+  return [
+    "default-src 'self'",
+    // api.telegram.org is only used server-side, but is allowed here because
+    // Next.js may inline prefetches.
+    `script-src 'self' 'unsafe-inline' https://telegram.org${isDev ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:" + (isDev ? " http://127.0.0.1:54321 http://localhost:54321" : ""),
+    "font-src 'self' data:",
+    `connect-src 'self' ${supabaseOrigin} ${supabaseWs} https://api.telegram.org${isDev ? " ws: http://127.0.0.1:54321 http://localhost:54321" : ""}`.trim(),
+    "worker-src 'self'",
+    "manifest-src 'self'",
+    // The OIDC consent screen is framed; nothing else is.
+    "frame-src https://oauth.telegram.org",
+    `frame-ancestors ${frameAncestors}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    ...(isDev ? [] : ["upgrade-insecure-requests"]),
+  ].join("; ");
+}
+
+const csp = buildCsp("'none'");
+// Telegram's clients render a Mini App inside a frame hosted by web.telegram.org,
+// so this route must be framable by them and by nothing else.
+const tgCsp = buildCsp("'self' https://web.telegram.org https://*.telegram.org");
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -61,7 +72,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/(.*)",
+        // Everything except the Telegram Mini App: no framing at all.
+        source: "/((?!tg$).*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
@@ -70,6 +82,18 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy", value: csp },
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
           ...(isDev ? [] : [{ key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" }]),
+        ],
+      },
+      {
+        // Mini App: Telegram frames it from web.telegram.org. Sending DENY here
+        // makes the client show "site refused to connect" instead of the app.
+        source: "/tg",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
+          { key: "Content-Security-Policy", value: tgCsp },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
         ],
       },
       {

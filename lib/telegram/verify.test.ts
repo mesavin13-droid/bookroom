@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { constants, createHash, createHmac, generateKeyPairSync, sign } from "node:crypto";
+﻿import { describe, expect, it } from "vitest";
+// `sign` is aliased: this file already has a local helper by that name.
+import { constants, createHash, createHmac, generateKeyPairSync, sign as cryptoSign } from "node:crypto";
 import { telegramChatId, telegramStartParam, telegramSyntheticEmail, verifyTelegramIdToken, verifyTelegramInitData } from "./verify";
 
 const BOT_TOKEN = "123456:TEST_TOKEN_FOR_UNIT_TESTS";
@@ -25,13 +26,13 @@ describe("verifyTelegramInitData", () => {
     const initData = sign({
       auth_date: String(freshAuthDate()),
       id: String(id),
-      user: JSON.stringify({ id, first_name: "Иван", last_name: "Петров", username: "ivan" }),
+      user: JSON.stringify({ id, first_name: "РРІР°РЅ", last_name: "РџРµС‚СЂРѕРІ", username: "ivan" }),
     });
 
     const user = verifyTelegramInitData(initData, BOT_TOKEN);
     expect(user).not.toBeNull();
     expect(user!.id).toBe(id);
-    expect(user!.name).toBe("Иван Петров");
+    expect(user!.name).toBe("РРІР°РЅ РџРµС‚СЂРѕРІ");
     expect(user!.username).toBe("ivan");
   });
 
@@ -52,10 +53,10 @@ describe("verifyTelegramInitData", () => {
     const initData = sign({
       auth_date: String(freshAuthDate()),
       id: String(id),
-      user: JSON.stringify({ id, first_name: "Иван" }),
+      user: JSON.stringify({ id, first_name: "РРІР°РЅ" }),
     });
     const params = new URLSearchParams(initData);
-    params.set("user", JSON.stringify({ id, first_name: "Админ" }));
+    params.set("user", JSON.stringify({ id, first_name: "РђРґРјРёРЅ" }));
 
     expect(verifyTelegramInitData(params.toString(), BOT_TOKEN)).toBeNull();
   });
@@ -180,7 +181,7 @@ describe("verifyTelegramIdToken", () => {
       sub: "1",
       exp: 9999999999,
     })}`;
-    const token = `${signing}.${sign("RSA-SHA256", Buffer.from(signing), privateKey).toString("base64url")}`;
+    const token = `${signing}.${cryptoSign("RSA-SHA256", Buffer.from(signing), privateKey).toString("base64url")}`;
     expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
   });
 
@@ -200,7 +201,7 @@ describe("verifyTelegramIdToken", () => {
       sub: "1",
       exp: 9999999999,
     })}`;
-    const token = `${signing}.${sign("RSA-SHA256", Buffer.from(signing), privateKey).toString("base64url")}`;
+    const token = `${signing}.${cryptoSign("RSA-SHA256", Buffer.from(signing), privateKey).toString("base64url")}`;
     expect(await verifyTelegramIdToken(token, BOT_ID)).toBeNull();
   });
 
@@ -224,7 +225,7 @@ describe("verifyTelegramIdToken", () => {
       sub: "1",
       exp: 9999999999,
     })}`;
-    const v15 = sign("sha256", Buffer.from(signing), {
+    const v15 = cryptoSign("sha256", Buffer.from(signing), {
       key: privateKey,
       padding: constants.RSA_PKCS1_PADDING,
     });
