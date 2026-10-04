@@ -1,0 +1,11 @@
+-- ---------------------------------------------------------------------------
+-- Fix: the outbox claim functions mark a row 'sending' before handing it to the
+-- dispatcher (atomic pending -> sending claim), but the enum never had that
+-- value. Every drain therefore failed with
+--   invalid input value for enum public.delivery_status: "sending"
+-- and no notification was ever delivered.
+--
+-- Kept as a separate migration because this value is required by functions that
+-- shipped earlier.
+-- ---------------------------------------------------------------------------
+alter type public.delivery_status add value if not exists 'sending';
