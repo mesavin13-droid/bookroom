@@ -39,6 +39,20 @@ export async function POST(request: Request) {
     // Stale payload (cached WebView) and a genuine signature mismatch are both
     // rejects, but they call for very different fixes, so log which one it was.
     console.warn("[telegram/session] initData rejected:", checked.reason);
+    if (checked.reason === "bad_signature") {
+      // Diagnostic only: field names and the user id are not secrets, and they
+      // are the difference between "stale bot token" and "the Mini App is owned
+      // by a different bot than the one we hold a token for".
+      const fields = [...new URLSearchParams(initData).keys()].sort();
+      let telegramUserId: string | null = null;
+      try {
+        const raw = new URLSearchParams(initData).get("user");
+        telegramUserId = raw ? String((JSON.parse(raw) as { id?: number }).id ?? "") : null;
+      } catch {
+        telegramUserId = "unparseable";
+      }
+      console.warn("[telegram/session] fields:", fields.join(","), "| telegram user id:", telegramUserId);
+    }
     // A cached Telegram webview keeps the original auth_date, so it can look
     // stale long after the user opened the bot. Say so instead of guessing.
     const expired = checked.reason === "expired";
